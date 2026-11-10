@@ -1,0 +1,397 @@
+<title>GTL Track Viewer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: club-site look. Green gradient masthead band, then 3D stage + elevation module on the left and a column of green-titled modules on the right; stacks on phones. */
+:root {
+  --bg: #ffffff;
+  --panel: #f1f1f1;
+  --fg: #1b1f1d;
+  --muted: #5f6662;
+  --rule: #bbbbbb;
+  --green: #005e31;
+  --green-hi: #009a4c;
+  --head-a: #006634; --head-b: #009c4d;
+  --on-green: #f5f5f5;
+  --stage: #e6eae7;
+  --gridline: #c4cbc6;
+  --pin: #009a4c;
+  --s1: #2f6fb3; --s2: #d0661c; --s3: #7a4fb0;
+  --body: Verdana, Geneva, "DejaVu Sans", Tahoma, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "DejaVu Sans Mono", monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1311; --panel: #181d1a; --fg: #e6ebe8; --muted: #97a19b; --rule: #2e3631;
+  --green: #4cc488; --green-hi: #2fb36f; --head-a: #00441f; --head-b: #00783b; --on-green: #f1f5f2;
+  --stage: #0a0e0c; --gridline: #26302a; --pin: #39d27f;
+  --s1: #6aa8ea; --s2: #f08a4b; --s3: #b493e6; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1311; --panel: #181d1a; --fg: #e6ebe8; --muted: #97a19b; --rule: #2e3631;
+  --green: #4cc488; --green-hi: #2fb36f; --head-a: #00441f; --head-b: #00783b; --on-green: #f1f5f2;
+  --stage: #0a0e0c; --gridline: #26302a; --pin: #39d27f;
+  --s1: #6aa8ea; --s2: #f08a4b; --s3: #b493e6; color-scheme: dark }
+
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 12px; display: flex; flex-direction: column; }
+.gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+.mast { background: linear-gradient(180deg, var(--head-a), var(--head-b)); color: var(--on-green); border-bottom: 3px solid var(--green); }
+.mast .gutter { padding-block: 14px 12px; display: flex; align-items: end; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+.crumb { font-size: 10px; opacity: .85; letter-spacing: .03em; }
+h1 { font-size: clamp(24px, 4.2vw, 36px); font-weight: bold; margin: 4px 0 2px; letter-spacing: -.01em; text-wrap: balance; }
+.real { font-size: 13px; font-weight: bold; opacity: .92; }
+.real span { font-weight: normal; opacity: .85; }
+.proto { font-size: 10px; border: 1px solid rgba(255,255,255,.45); padding: 4px 8px; border-radius: 2px; white-space: nowrap; }
+
+.wrap { flex: 1; min-height: 0; box-sizing: border-box; display: grid; gap: 14px;
+  grid-template-columns: minmax(0, 1fr) 280px; grid-template-rows: minmax(360px, 1fr) auto;
+  grid-template-areas: "stage side" "prof side"; padding-block: 14px; }
+
+.module { background: var(--panel); border: 1px solid var(--rule); min-width: 0; }
+.module > h3 { margin: 0; background: var(--green-hi); color: var(--on-green); font-size: 12px; font-weight: bold; padding: 4px 8px; letter-spacing: .02em; }
+.module > .in { padding: 10px; }
+
+.stage { grid-area: stage; position: relative; background: var(--stage); border: 1px solid var(--rule); overflow: hidden; min-height: 360px; }
+.stage canvas { display: block; width: 100%; height: 100%; position: absolute; inset: 0; touch-action: none; }
+.tools { position: absolute; left: 10px; top: 10px; right: 10px; display: flex; flex-wrap: wrap; gap: 8px; pointer-events: none; }
+.seg { display: inline-flex; background: var(--panel); border: 1px solid var(--rule); overflow: hidden; pointer-events: auto; }
+.seg button, .btn { font: bold 11px var(--body); color: var(--green); background: transparent; border: 0; padding: 6px 10px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button[aria-pressed="true"] { background: var(--green-hi); color: var(--on-green); }
+.btn { background: var(--panel); border: 1px solid var(--rule); pointer-events: auto; }
+.btn:hover, .seg button:hover { text-decoration: underline; }
+.btn.primary { background: var(--green-hi); border-color: var(--green-hi); color: var(--on-green); }
+button:focus-visible { outline: 2px solid var(--green-hi); outline-offset: 2px; }
+.hint { position: absolute; left: 10px; bottom: 8px; font-size: 10px; color: var(--muted); pointer-events: none; }
+.legend { position: absolute; right: 10px; bottom: 10px; background: var(--panel); border: 1px solid var(--rule); padding: 5px 8px; font: 11px var(--mono); color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.ramp { width: 90px; height: 8px; background: linear-gradient(90deg, #2c7bb6, #abd9e9, #ffffbf, #fdae61, #d7191c); }
+.sw { display: inline-block; width: 10px; height: 10px; vertical-align: -1px; margin-right: 3px; }
+.readout { position: absolute; right: 10px; top: 46px; background: var(--panel); border: 1px solid var(--rule); border-left: 4px solid var(--green-hi); padding: 5px 8px; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+
+.prof { grid-area: prof; }
+#profile { width: 100%; height: 150px; display: block; cursor: crosshair; }
+
+.side { grid-area: side; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.big { font-size: 34px; font-weight: bold; line-height: 1; color: var(--green); }
+.big small { font-size: 14px; color: var(--muted); margin-left: 4px; font-weight: normal; }
+.big + .sub { margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: normal; }
+dl { margin: 0; display: grid; grid-template-columns: 1fr auto; }
+dt, dd { padding: 6px 0; border-bottom: 1px solid var(--rule); margin: 0; }
+dt { color: var(--muted); }
+dd { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+dl > :nth-last-child(-n+2) { border-bottom: 0; }
+.note { font-size: 11px; line-height: 1.55; color: var(--muted); margin: 0; }
+.note + .note { margin-top: 8px; }
+.note b { color: var(--fg); }
+
+@media (max-width: 820px) {
+  .wrap { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: "stage" "prof" "side"; }
+  .stage { height: 62vh; min-height: 320px; }
+}
+</style>
+
+<header class="mast">
+  <div class="gutter">
+    <div>
+      <div class="crumb">GT Legends · GameData/Locations/CIRC/allroad</div>
+      <h1>CIRC Allroad</h1>
+      <div class="real">Corner Inlet Racing Club <span>· Fish Creek, Victoria, Australia (fictional)</span></div>
+    </div>
+    <div class="proto">Prototype · 1 of 701 layouts</div>
+  </div>
+</header>
+
+<main class="wrap gutter">
+  <section class="stage" id="stage" aria-label="3D track view">
+    <canvas id="c"></canvas>
+    <div class="tools">
+      <div class="seg" role="group" aria-label="Colour by">
+        <button id="col-elev" aria-pressed="true">Elevation</button>
+        <button id="col-sec" aria-pressed="false">Sectors</button>
+      </div>
+      <button class="btn primary" id="drive">Drive the lap</button>
+      <button class="btn" id="reset">Reset view</button>
+    </div>
+    <div class="readout" id="readout" hidden></div>
+    <div class="legend" id="legend"></div>
+    <div class="hint">Drag to move · right-drag to rotate · scroll to zoom</div>
+  </section>
+
+  <section class="module prof">
+    <h3>Elevation over one lap</h3>
+    <div class="in"><svg id="profile" role="img" aria-label="Elevation profile along the lap. Hover to find the spot on the track."></svg></div>
+  </section>
+
+  <aside class="side">
+    <section class="module">
+      <h3>Lap length</h3>
+      <div class="in"><div class="big" id="len"></div><div class="sub">Permanent road course · 36 grid slots</div></div>
+    </section>
+    <section class="module">
+      <h3>Track data</h3>
+      <div class="in"><dl id="stats"></dl></div>
+    </section>
+    <section class="module">
+      <h3>About</h3>
+      <div class="in">
+        <p class="note"><b>Fictional hillclimb circuit</b> on a farm near Fish Creek, South Gippsland. rFactor scratch build by legendsatlunch, converted to GTL. Also installed at this venue: <b>CIRC Sprint</b>.</p>
+        <p class="note">Drawn from the AI waypoint file: road centre, road width, pit lane and grid. Allroad opens extra side roads that the AI line doesn't use, so they don't appear here.</p>
+      </div>
+    </section>
+  </aside>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const TRACK = __DATA__;
+
+// ---------- data prep ----------
+// columns: 0-2 pos, 3-5 perp, 6 roadL, 7 roadR, 8 farL, 9 farR, 10 branch, 11 next, 12 dist, 13 sector, 14 speed
+const all = TRACK.wp;
+const main = all.filter(w => w[10] === 0);
+const pit = all.filter(w => w[10] === 1);
+main.sort((a, b) => a[12] - b[12]);   // start at the start/finish line
+const LAP = TRACK.lap_length;
+
+const ys = main.map(w => w[1]);
+const yMin = Math.min(...ys), yMax = Math.max(...ys);
+let cx = 0, cz = 0;
+main.forEach(w => { cx += w[0]; cz += w[2]; }); cx /= main.length; cz /= main.length;
+const R = Math.max(...main.map(w => Math.hypot(w[0]-cx, w[2]-cz)));
+
+// gradient, smoothed over ~40 m
+function gradAt(i) {
+  const n = main.length; let j = i, d = 0;
+  while (d < 40) { const k = (j + 1) % n; d += Math.hypot(main[k][0]-main[j][0], main[k][2]-main[j][2]); j = k; if (j === i) break; }
+  return d > 0 ? (main[j][1] - main[i][1]) / d * 100 : 0;
+}
+const grads = main.map((_, i) => gradAt(i));
+const maxUp = Math.max(...grads), maxDown = Math.min(...grads);
+let climb = 0; for (let i = 1; i < main.length; i++) { const dy = main[i][1] - main[i-1][1]; if (dy > 0) climb += dy; }
+
+// ---------- side panel ----------
+const fmt = (v, d = 0) => v.toLocaleString('en-GB', { minimumFractionDigits: d, maximumFractionDigits: d });
+document.getElementById('len').innerHTML = `${fmt(LAP / 1000, 2)}<small>km</small>`;
+const avgW = main.reduce((s, w) => s + w[6] + w[7], 0) / main.length;
+document.getElementById('stats').innerHTML = [
+  ['Elevation range', `${fmt(yMax - yMin, 1)} m`],
+  ['Total climb per lap', `${fmt(climb)} m`],
+  ['Steepest climb', `${fmt(maxUp, 1)} %`],
+  ['Steepest descent', `${fmt(-maxDown, 1)} %`],
+  ['Average road width', `${fmt(avgW, 1)} m`],
+  ['Pit lane', pit.length ? 'yes' : 'none'],
+  ['Sector 1 · 2 · 3', `${fmt(TRACK.sector_1/1000,2)} · ${fmt((TRACK.sector_2-TRACK.sector_1)/1000,2)} · ${fmt((LAP-TRACK.sector_2)/1000,2)} km`],
+].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+
+// ---------- three.js scene ----------
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const stage = document.getElementById('stage');
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 1, 20000);
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.screenSpacePanning = false;            // pan slides over the ground, like a map
+controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.85));
+const sun = new THREE.DirectionalLight(0xffffff, 0.55); sun.position.set(-600, 900, 400); scene.add(sun);
+
+let colourMode = 'elev';
+// game coords: x east, y up, z north  ->  three: x, y, -z (north is away from the default camera)
+const P = (x, y, z) => new THREE.Vector3(x - cx, y - yMin, -(z - cz));
+
+function elevColour(y) {
+  const stops = [[0x2c,0x7b,0xb6],[0xab,0xd9,0xe9],[0xff,0xff,0xbf],[0xfd,0xae,0x61],[0xd7,0x19,0x1c]];
+  let t = (y - yMin) / (yMax - yMin || 1) * (stops.length - 1);
+  const i = Math.min(stops.length - 2, Math.floor(t)); t -= i;
+  return stops[i].map((c, k) => (c + (stops[i+1][k] - c) * t) / 255);
+}
+function secColour(s) {
+  const c = new THREE.Color(css(['--s1','--s2','--s3'][Math.max(0, Math.min(2, s))]));
+  return [c.r, c.g, c.b];
+}
+
+function ribbon(pts, closed, wL, wR, lift, colourFn) {
+  const pos = [], col = [], idx = [], n = pts.length;
+  pts.forEach(w => {
+    const px = w[3], pz = w[5], L = wL(w), Rr = wR(w);
+    const a = P(w[0] - px * L, w[1], w[2] - pz * L); a.y += lift;
+    const b = P(w[0] + px * Rr, w[1], w[2] + pz * Rr); b.y += lift;
+    pos.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    const c = colourFn(w); col.push(...c, ...c);
+  });
+  const segs = closed ? n : n - 1;
+  for (let i = 0; i < segs; i++) { const a = i * 2, b = ((i + 1) % n) * 2; idx.push(a, b, a + 1, a + 1, b, b + 1); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
+
+// location pin for the elevation-graph hover: stem + head + ground ring, drawn on top of everything
+const pin = new THREE.Group();
+const PIN_H = Math.max(25, R * 0.07);
+const pinMat = new THREE.MeshBasicMaterial({ depthTest: false, transparent: true });
+const stem = new THREE.Mesh(new THREE.CylinderGeometry(PIN_H * 0.025, PIN_H * 0.025, PIN_H, 8), pinMat); stem.position.y = PIN_H / 2;
+const head = new THREE.Mesh(new THREE.SphereGeometry(PIN_H * 0.12, 20, 14), pinMat); head.position.y = PIN_H;
+const ring = new THREE.Mesh(new THREE.RingGeometry(PIN_H * 0.14, PIN_H * 0.22, 32), pinMat); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.3;
+[stem, head, ring].forEach(m => { m.renderOrder = 10; pin.add(m); });
+pin.visible = false; scene.add(pin);
+
+const group = new THREE.Group(); scene.add(group);
+function build() {
+  group.clear();
+  const gl = new THREE.Color(css('--gridline'));
+  const roadCol = colourMode === 'elev' ? w => elevColour(w[1]) : w => secColour(w[13]);
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  group.add(new THREE.Mesh(ribbon(main, true, w => Math.max(w[8], w[6]) + 1.5, w => Math.max(w[9], w[7]) + 1.5, -0.25, () => [gl.r, gl.g, gl.b]), mat));
+  group.add(new THREE.Mesh(ribbon(main, true, w => w[6], w => w[7], 0.05, roadCol), mat));
+  if (pit.length > 1) {
+    const pc = new THREE.Color(css('--muted'));
+    group.add(new THREE.Mesh(ribbon(pit, false, w => Math.max(2, w[6]), w => Math.max(2, w[7]), 0.02, () => [pc.r, pc.g, pc.b]), mat));
+  }
+  // start/finish line + pole
+  const s = main[0], L = s[6] + 1, Rr = s[7] + 1;
+  const a = P(s[0] - s[3]*L, s[1], s[2] - s[5]*L), b = P(s[0] + s[3]*Rr, s[1], s[2] + s[5]*Rr);
+  a.y += 0.4; b.y += 0.4;
+  group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color: css('--fg') })));
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 14), new THREE.MeshBasicMaterial({ color: css('--fg') }));
+  pole.position.copy(a).add(new THREE.Vector3(0, 7, 0)); group.add(pole);
+  // grid slots
+  const gm = new THREE.MeshBasicMaterial({ color: css('--fg') });
+  TRACK.grid.forEach(g => { const m = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.6, 1.8), gm); m.position.copy(P(g[0], g[1], g[2])); m.position.y += 0.4; group.add(m); });
+  // drop lines to the ground plane
+  const dl = [];
+  for (let i = 0; i < main.length; i += 12) { const p = P(main[i][0], main[i][1], main[i][2]); dl.push(p.x, 0, p.z, p.x, p.y, p.z); }
+  const dg = new THREE.BufferGeometry(); dg.setAttribute('position', new THREE.Float32BufferAttribute(dl, 3));
+  group.add(new THREE.LineSegments(dg, new THREE.LineBasicMaterial({ color: css('--gridline') })));
+  // ground grid, 100 m cells
+  const span = Math.ceil(R / 100) * 200 + 200;
+  const gh = new THREE.GridHelper(span, span / 100, css('--gridline'), css('--gridline'));
+  gh.position.y = -0.5; group.add(gh);
+  pinMat.color.set(css('--pin'));
+  scene.background = new THREE.Color(css('--stage'));
+  renderLegend();
+}
+
+function renderLegend() {
+  const lg = document.getElementById('legend');
+  if (colourMode === 'elev') lg.innerHTML = `${fmt(0)} m <span class="ramp"></span> +${fmt(yMax - yMin)} m`;
+  else lg.innerHTML = ['S1','S2','S3'].map((s, i) => `<span><i class="sw" style="background:var(--s${i+1})"></i>${s}</span>`).join('');
+}
+
+function home() {
+  camera.position.set(R * 0.25, R * 1.1, R * 1.25);
+  controls.target.set(0, (yMax - yMin) * 0.3, 0);
+  controls.update();
+}
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+function press(ids, on) { ids.forEach(id => document.getElementById(id).setAttribute('aria-pressed', id === on)); }
+document.getElementById('col-elev').onclick = () => { colourMode = 'elev'; press(['col-elev','col-sec'], 'col-elev'); build(); };
+document.getElementById('col-sec').onclick = () => { colourMode = 'sec'; press(['col-elev','col-sec'], 'col-sec'); build(); };
+document.getElementById('reset').onclick = () => { stopDrive(); home(); };
+
+// ---------- drive the lap ----------
+let driving = false, driveD = 0, lastT = 0;
+const driveBtn = document.getElementById('drive');
+function stopDrive() { if (!driving) return; driving = false; driveBtn.textContent = 'Drive the lap'; controls.enabled = true; setReadout(null); drawCursor(null); }
+driveBtn.onclick = () => {
+  if (driving) { stopDrive(); home(); return; }
+  driving = true; driveD = 0; lastT = performance.now(); controls.enabled = false; pin.visible = false; driveBtn.textContent = 'Stop';
+};
+function idxAtDist(d) {
+  let lo = 0, hi = main.length - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (main[m][12] <= d) lo = m; else hi = m - 1; }
+  return lo;
+}
+function pointAtDist(d) {
+  d = ((d % LAP) + LAP) % LAP;
+  const i = idxAtDist(d), j = (i + 1) % main.length;
+  const d0 = main[i][12], d1 = j === 0 ? LAP : main[j][12];
+  const t = d1 > d0 ? (d - d0) / (d1 - d0) : 0;
+  return P(main[i][0] + (main[j][0]-main[i][0])*t, main[i][1] + (main[j][1]-main[i][1])*t, main[i][2] + (main[j][2]-main[i][2])*t);
+}
+const SPEED = 45; // m/s, about 160 km/h
+function tick(now) {
+  if (driving) {
+    const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
+    driveD = (driveD + dt * SPEED) % LAP;
+    const p = pointAtDist(driveD), look = pointAtDist(driveD + 35);
+    camera.position.set(p.x, p.y + 6, p.z);
+    camera.lookAt(look.x, look.y + 1.5, look.z);
+    drawCursor(driveD); setReadout(driveD);
+  } else controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+
+// ---------- elevation profile ----------
+const svg = document.getElementById('profile');
+let PW = 0; const PH = 150, padL = 44, padR = 8, padT = 8, padB = 22;
+const px = d => padL + d / LAP * (PW - padL - padR);
+const py = y => padT + (1 - (y - yMin) / (yMax - yMin || 1)) * (PH - padT - padB);
+function drawProfile() {
+  PW = svg.clientWidth || 600;
+  svg.setAttribute('viewBox', `0 0 ${PW} ${PH}`);
+  const rel = yMax - yMin, step = rel > 80 ? 20 : 10;
+  const ticksY = []; for (let v = 0; v <= rel; v += step) ticksY.push(v);
+  const ticksX = []; const kmStep = LAP > 8000 ? 2000 : LAP > 3000 ? 1000 : 500;
+  for (let d = 0; d <= LAP; d += kmStep) ticksX.push(d);
+  let path = main.map((w, i) => `${i ? 'L' : 'M'}${px(w[12]).toFixed(1)},${py(w[1]).toFixed(1)}`).join('');
+  path += `L${px(LAP).toFixed(1)},${py(main[0][1]).toFixed(1)}`;
+  const area = path + `L${px(LAP)},${PH - padB}L${padL},${PH - padB}Z`;
+  const T = (x, y, s, a = 'middle') => `<text x="${x}" y="${y}" text-anchor="${a}" font-size="10" font-family="IBM Plex Mono, monospace" fill="var(--muted)">${s}</text>`;
+  svg.innerHTML = `
+    <defs><linearGradient id="pf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="var(--green-hi)" stop-opacity=".32"/><stop offset="1" stop-color="var(--green-hi)" stop-opacity="0"/></linearGradient></defs>
+    ${ticksY.map(v => `<line x1="${padL}" x2="${PW - padR}" y1="${py(yMin + v)}" y2="${py(yMin + v)}" stroke="var(--rule)" stroke-width="1"/>${T(padL - 6, py(yMin + v) + 4, `+${v} m`, 'end')}`).join('')}
+    ${ticksX.map(d => T(px(d), PH - 6, `${fmt(d/1000, d % 1000 ? 1 : 0)} km`)).join('')}
+    ${[TRACK.sector_1, TRACK.sector_2].map((d, i) => `<line x1="${px(d)}" x2="${px(d)}" y1="${padT}" y2="${PH - padB}" stroke="var(--muted)" stroke-dasharray="3 3"/>${T(px(d) + 4, padT + 10, `S${i + 2}`, 'start')}`).join('')}
+    <path d="${area}" fill="url(#pf)"/>
+    <path d="${path}" fill="none" stroke="var(--green-hi)" stroke-width="1.8" stroke-linejoin="round"/>
+    <g id="cursor" visibility="hidden"><line id="cl" y1="${padT}" y2="${PH - padB}" stroke="var(--fg)"/><circle id="cc" r="4" fill="var(--fg)"/></g>`;
+}
+function drawCursor(d) {
+  const g = svg.querySelector('#cursor'); if (!g) return;
+  if (d == null) { g.setAttribute('visibility', 'hidden'); return; }
+  const i = idxAtDist(d), x = px(d);
+  g.setAttribute('visibility', 'visible');
+  svg.querySelector('#cl').setAttribute('x1', x); svg.querySelector('#cl').setAttribute('x2', x);
+  svg.querySelector('#cc').setAttribute('cx', x); svg.querySelector('#cc').setAttribute('cy', py(main[i][1]));
+}
+const ro = document.getElementById('readout');
+function setReadout(d) {
+  if (d == null) { ro.hidden = true; return; }
+  const i = idxAtDist(d), g = grads[i];
+  ro.hidden = false;
+  ro.textContent = `${fmt(d)} m · +${fmt(main[i][1] - yMin, 1)} m · ${g >= 0 ? '+' : ''}${fmt(g, 1)} %`;
+}
+svg.addEventListener('pointermove', e => {
+  if (driving) return;
+  const r = svg.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width * PW;
+  const d = Math.max(0, Math.min(LAP, (x - padL) / (PW - padL - padR) * LAP));
+  drawCursor(d); setReadout(d);
+  pin.position.copy(pointAtDist(d)); pin.visible = true;
+});
+svg.addEventListener('pointerleave', () => { if (!driving) { pin.visible = false; setReadout(null); drawCursor(null); } });
+new ResizeObserver(drawProfile).observe(svg);
+
+const rebuildTheme = () => { build(); drawProfile(); };
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', rebuildTheme);
+new MutationObserver(rebuildTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+build(); resize(); home(); drawProfile();
+requestAnimationFrame(tick);
+</script>
