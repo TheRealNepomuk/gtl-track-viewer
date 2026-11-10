@@ -1,0 +1,83 @@
+/* Shared look, after the Altbierbude site: green gradient masthead, green-titled grey modules, Verdana. */
+:root {
+  --bg: #ffffff;
+  --panel: #f1f1f1;
+  --fg: #1b1f1d;
+  --muted: #5f6662;
+  --rule: #bbbbbb;
+  --row-hover: #e4efe8;
+  --green: #005e31;
+  --green-hi: #009a4c;
+  --head-a: #006634; --head-b: #009c4d;
+  --on-green: #f5f5f5;
+  --stage: #e6eae7;
+  --gridline: #c4cbc6;
+  --pin: #009a4c;
+  --warn: #9a5b00;
+  --s1: #2f6fb3; --s2: #d0661c; --s3: #7a4fb0;
+  --body: Verdana, Geneva, "DejaVu Sans", Tahoma, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "DejaVu Sans Mono", monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1311; --panel: #181d1a; --fg: #e6ebe8; --muted: #97a19b; --rule: #2e3631; --row-hover: #1f2a23;
+  --green: #4cc488; --green-hi: #2fb36f; --head-a: #00441f; --head-b: #00783b; --on-green: #f1f5f2;
+  --stage: #0a0e0c; --gridline: #26302a; --pin: #39d27f; --warn: #e3a646;
+  --s1: #6aa8ea; --s2: #f08a4b; --s3: #b493e6; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1311; --panel: #181d1a; --fg: #e6ebe8; --muted: #97a19b; --rule: #2e3631; --row-hover: #1f2a23;
+  --green: #4cc488; --green-hi: #2fb36f; --head-a: #00441f; --head-b: #00783b; --on-green: #f1f5f2;
+  --stage: #0a0e0c; --gridline: #26302a; --pin: #39d27f; --warn: #e3a646;
+  --s1: #6aa8ea; --s2: #f08a4b; --s3: #b493e6; color-scheme: dark }
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }   /* elements with their own display (e.g. the loading overlay) must still hide */
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 12px; display: flex; flex-direction: column; }
+a { color: var(--green); }
+.gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+.mast { background: linear-gradient(180deg, var(--head-a), var(--head-b)); color: var(--on-green); border-bottom: 3px solid var(--green); }
+.mast .gutter { padding-block: 14px 12px; display: flex; align-items: end; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+.mast a { color: var(--on-green); }
+.crumb { font-size: 10px; opacity: .85; letter-spacing: .03em; }
+h1 { font-size: clamp(24px, 4.2vw, 36px); font-weight: bold; margin: 4px 0 2px; letter-spacing: -.01em; text-wrap: balance; }
+.real { font-size: 13px; font-weight: bold; opacity: .92; }
+.real span { font-weight: normal; opacity: .85; }
+.tag { font-size: 10px; border: 1px solid rgba(255,255,255,.45); padding: 4px 8px; border-radius: 2px; white-space: nowrap; color: var(--on-green); text-decoration: none; }
+a.tag:hover { background: rgba(255,255,255,.12); }
+
+.module { background: var(--panel); border: 1px solid var(--rule); min-width: 0; }
+.module > h3 { margin: 0; background: var(--green-hi); color: var(--on-green); font-size: 12px; font-weight: bold; padding: 4px 8px; letter-spacing: .02em; }
+.module > .in { padding: 10px; }
+
+.seg { display: inline-flex; background: var(--panel); border: 1px solid var(--rule); overflow: hidden; }
+.seg button, .btn { font: bold 11px var(--body); color: var(--green); background: transparent; border: 0; padding: 6px 10px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button[aria-pressed="true"] { background: var(--green-hi); color: var(--on-green); }
+.btn { background: var(--panel); border: 1px solid var(--rule); }
+.btn:hover, .seg button:hover { text-decoration: underline; }
+.btn.primary { background: var(--green-hi); border-color: var(--green-hi); color: var(--on-green); }
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--green-hi); outline-offset: 2px; }
+
+.note { font-size: 11px; line-height: 1.55; color: var(--muted); margin: 0; }
+.note + .note { margin-top: 8px; }
+.note b { color: var(--fg); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.mastlinks { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+/* Buy Me a Coffee colours (fixed in both themes) */
+.coffee { background: #ffdd00; color: #000; border: 1px solid #000; padding: 6px 12px; border-radius: 4px; font: bold 12px var(--body); text-decoration: none; white-space: nowrap; }
+.coffee:hover { background: #ffe94d; }
+.mast .coffee { padding: 3px 10px; font-size: 11px; color: #000; }   /* beat .mast a */
+
+/* About overlay */
+dialog.about { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; border: 1px solid var(--rule); background: var(--panel); color: var(--fg); overflow: auto; }
+dialog.about::backdrop { background: rgba(0, 0, 0, .55); }
+.about-head { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(180deg, var(--head-a), var(--head-b)); color: var(--on-green); padding: 8px 12px; }
+.about-head h2 { margin: 0; font-size: 15px; }
+.about-close { background: none; border: 0; color: var(--on-green); font-size: 22px; line-height: 1; cursor: pointer; padding: 0 4px; }
+.about-body { padding: 4px 16px 16px; font-size: 12px; line-height: 1.6; }
+.about-body h3 { font-size: 12px; color: var(--green); margin: 14px 0 2px; }
+.about-body p { margin: 6px 0; }
+.about-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; align-items: center; }
+.about-links .btn { text-decoration: none; }

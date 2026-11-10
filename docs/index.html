@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GTL Track Viewer</title>
+<meta name="description" content="Browse, filter and view GT Legends tracks in 3D without starting the game.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="style.css">
+<style>
+/* Layout: filter column on the left (histogram per metric), sortable track table on the right; filters fold away on phones. */
+.wrap { flex: 1; display: grid; gap: 14px; grid-template-columns: 270px minmax(0, 1fr); align-items: start; padding-block: 14px; }
+.filters summary { list-style: none; cursor: pointer; margin: 0; background: var(--green-hi); color: var(--on-green); font-size: 12px; font-weight: bold; padding: 4px 8px; display: flex; justify-content: space-between; }
+.filters summary::-webkit-details-marker { display: none; }
+.filters[open] summary .chev { transform: rotate(180deg); }
+.filters .in { display: flex; flex-direction: column; gap: 14px; padding: 10px; }
+label.lbl { display: block; font-weight: bold; margin-bottom: 4px; }
+input[type="search"], input[type="number"], select { font: 12px var(--body); color: var(--fg); background: var(--bg); border: 1px solid var(--rule); padding: 5px 6px; width: 100%; border-radius: 0; }
+input[type="number"] { font-family: var(--mono); }
+.metric .head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; margin-bottom: 4px; }
+.metric .head b { font-size: 11px; }
+.metric .head span { font-size: 10px; color: var(--muted); }
+/* histogram and slider share the same inset, so each handle sits under the bars it cuts off */
+.hist { display: block; width: calc(100% - 14px); margin: 0 7px; height: 26px; }
+.slider { position: relative; height: 18px; }
+.slider .track { position: absolute; left: 7px; right: 7px; top: 7px; height: 4px; background: var(--gridline); }
+.slider .fill { position: absolute; top: 0; height: 4px; background: var(--green-hi); }
+.slider input[type="range"] { position: absolute; inset: 0; width: 100%; height: 18px; margin: 0; background: none; pointer-events: none; -webkit-appearance: none; appearance: none; }
+.slider input[type="range"]::-webkit-slider-runnable-track { background: none; height: 18px; }
+.slider input[type="range"]::-moz-range-track { background: none; }
+.slider input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; pointer-events: auto; width: 14px; height: 14px; margin-top: 2px; border-radius: 50%; background: var(--green-hi); border: 2px solid var(--panel); box-shadow: 0 0 0 1px var(--green-hi); cursor: grab; }
+.slider input[type="range"]::-moz-range-thumb { pointer-events: auto; width: 10px; height: 10px; border-radius: 50%; background: var(--green-hi); border: 2px solid var(--panel); box-shadow: 0 0 0 1px var(--green-hi); cursor: grab; }
+.slider input[type="range"]:focus-visible { outline: none; }
+.slider input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--fg); }
+.slider input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--fg); }
+.minmax { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; align-items: center; margin-top: 4px; }
+.minmax span { color: var(--muted); font-size: 10px; }
+.check { display: flex; gap: 6px; align-items: center; font-size: 11px; }
+
+.results { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; }
+.count { font-size: 13px; font-weight: bold; }
+.count span { color: var(--muted); font-weight: normal; }
+.sortm { display: none; gap: 6px; align-items: center; }
+.sortm select { width: auto; }
+
+.tablewrap { overflow-x: auto; border: 1px solid var(--rule); background: var(--panel); }
+table { border-collapse: collapse; width: 100%; min-width: 760px; }
+th, td { padding: 6px 8px; border-bottom: 1px solid var(--rule); text-align: right; white-space: nowrap; }
+th { white-space: normal; vertical-align: bottom; line-height: 1.3; }   /* long headings wrap instead of widening the table */
+th { position: sticky; top: 0; background: var(--green-hi); color: var(--on-green); font-size: 11px; z-index: 1; }
+th button { font: bold 11px var(--body); color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+th button:hover { text-decoration: underline; }
+th .u { font-weight: normal; opacity: .85; }
+th.l, td.l { text-align: left; }
+td { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12px; }
+td.name { font-family: var(--body); white-space: normal; min-width: 220px; }
+td.name a { font-weight: bold; text-decoration: none; }
+td.name a:hover { text-decoration: underline; }
+td.name small { display: block; color: var(--muted); font-size: 10px; margin-top: 2px; }
+td.map { width: 52px; padding: 3px 4px 3px 8px; }
+td.map svg { display: block; width: 44px; height: 44px; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--row-hover); }
+td.na { color: var(--muted); }
+.flag { color: var(--warn); font-size: 10px; }
+.empty { padding: 30px 12px; text-align: center; color: var(--muted); }
+
+@media (max-width: 820px) {
+  .wrap { grid-template-columns: minmax(0, 1fr); }
+  .sortm { display: flex; }
+}
+</style>
+</head>
+<body>
+<header class="mast">
+  <div class="gutter">
+    <div>
+      <div class="crumb" id="crumb">Track viewer for the Altbierbude tracks</div>
+      <h1>GTL Track Viewer</h1>
+      <div class="real" id="sub">Every installed layout, in 3D</div>
+    </div>
+    <div class="mastlinks"><a class="tag" href="https://github.com/TheRealNepomuk/gtl-track-viewer" data-about>About this project</a><a class="coffee" href="https://www.buymeacoffee.com/TheRealNepomuk" target="_blank" rel="noopener">☕ Buy me a coffee</a></div>
+  </div>
+</header>
+
+<main class="wrap gutter">
+  <details class="module filters" id="filters" open>
+    <summary>Filter <span class="chev" aria-hidden="true">▾</span></summary>
+    <div class="in">
+      <div>
+        <label class="lbl" for="q">Search</label>
+        <input type="search" id="q" placeholder="Name, folder or country" autocomplete="off">
+      </div>
+      <div id="metrics"></div>
+      <label class="check"><input type="checkbox" id="hasheight"> Only tracks with height data</label>
+      <button class="btn" id="reset" type="button">Clear all filters</button>
+    </div>
+  </details>
+
+  <section class="results">
+    <div class="bar">
+      <div class="count" id="count"></div>
+      <div class="sortm">
+        <label for="sortsel">Sort</label>
+        <select id="sortsel"></select>
+        <button class="btn" id="sortdir" type="button" aria-label="Reverse sort order">↓</button>
+      </div>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr id="thead"></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty" id="empty" hidden>No layouts match these filters. Widen a range or clear the filters.</div>
+    </div>
+  </section>
+</main>
+
+
+<script>
+const METRICS = [
+  { k: 'km',    label: 'Length',           unit: 'km', dec: 2, step: 0.1 },
+  { k: 'elev',  label: 'Height difference', unit: 'm',  dec: 0, step: 5, height: true },
+  { k: 'climb', label: 'Total climb',      unit: 'm',  dec: 0, step: 10, height: true },
+  { k: 'up',    label: 'Steepest climb',   unit: '%',  dec: 1, step: 0.5, height: true },
+  { k: 'down',  label: 'Steepest descent', unit: '%',  dec: 1, step: 0.5, height: true },
+  { k: 'width', label: 'Road width',        unit: 'm',  dec: 1, step: 0.5 },
+  { k: 'grid',  label: 'Grid slots',       unit: '',   dec: 0, step: 1 },
+];
+const COLS = [{ k: 'name', label: 'Track', l: true }, ...METRICS.map(m => ({ k: m.k, label: m.label, unit: m.unit }))];
+const fmt = (v, d) => v.toLocaleString('en-GB', { minimumFractionDigits: d, maximumFractionDigits: d });
+const $ = id => document.getElementById(id);
+
+let TRACKS = [];
+let state = { q: '', f: {}, hasheight: false, sort: 'name', dir: 1 };
+try { Object.assign(state, JSON.parse(sessionStorage.getItem('gtl-index') || '{}')); } catch (e) {}
+const save = () => { try { sessionStorage.setItem('gtl-index', JSON.stringify(state)); } catch (e) {} };
+
+const noHeight = t => t.elev < 0.5;
+const valOf = (t, m) => (m.height && noHeight(t)) ? null : t[m.k];
+
+function matches(t, skip) {
+  if (state.hasheight && noHeight(t)) return false;
+  if (state.q) {
+    const hay = `${t.name} ${t.venue} ${t.folder} ${t.location} ${t.type}`.toLowerCase();
+    if (!state.q.toLowerCase().split(/\s+/).every(w => hay.includes(w))) return false;
+  }
+  for (const m of METRICS) {
+    if (m.k === skip) continue;
+    const r = state.f[m.k]; if (!r) continue;
+    const v = valOf(t, m);
+    if ((r[0] != null || r[1] != null) && v == null) return false;
+    if (r[0] != null && v < r[0]) return false;
+    if (r[1] != null && v > r[1]) return false;
+  }
+  return true;
+}
+
+// ---- filter column: histogram + min/max per metric ----
+const BINS = 24;
+const ranges = {};
+function buildFilters() {
+  $('metrics').innerHTML = METRICS.map(m => `
+    <div class="metric" id="m-${m.k}">
+      <div class="head"><b>${m.label}</b><span id="r-${m.k}"></span></div>
+      <svg class="hist" id="h-${m.k}" viewBox="0 0 ${BINS * 10} 26" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <div class="slider">
+        <div class="track"><div class="fill" id="fill-${m.k}"></div></div>
+        <input type="range" id="smin-${m.k}" min="0" max="${SPOS}" value="0" aria-label="${m.label} minimum slider">
+        <input type="range" id="smax-${m.k}" min="0" max="${SPOS}" value="${SPOS}" aria-label="${m.label} maximum slider">
+      </div>
+      <div class="minmax">
+        <input type="number" id="min-${m.k}" step="${m.step}" aria-label="${m.label} minimum">
+        <span>to</span>
+        <input type="number" id="max-${m.k}" step="${m.step}" aria-label="${m.label} maximum">
+      </div>
+    </div>`).join('');
+  METRICS.forEach(m => {
+    const vals = TRACKS.map(t => valOf(t, m)).filter(v => v != null).sort((a, b) => a - b);
+    const lo = vals[0], hi = vals[Math.floor(vals.length * 0.98)];   // long tail goes into the last bar
+    ranges[m.k] = { lo, hi, max: vals[vals.length - 1] };
+    $('r-' + m.k).textContent = `${fmt(lo, m.dec)}–${fmt(vals[vals.length - 1], m.dec)} ${m.unit}`;
+    const f = state.f[m.k] || [];
+    $('min-' + m.k).placeholder = fmt(lo, m.dec).replace(/,/g, '');
+    $('max-' + m.k).placeholder = fmt(ranges[m.k].max, m.dec).replace(/,/g, '');
+    $('min-' + m.k).value = f[0] ?? ''; $('max-' + m.k).value = f[1] ?? '';
+    ['min', 'max'].forEach((s, i) => $(s + '-' + m.k).addEventListener('input', e => {
+      const v = e.target.value === '' ? null : Number(e.target.value);
+      const r = state.f[m.k] || [null, null]; r[i] = v; state.f[m.k] = r; syncSlider(m); preview();
+      clearTimeout(numTimer); numTimer = setTimeout(update, 250);   // table waits until typing pauses
+    }));
+    // sliders: far left = no minimum, far right = no maximum (the long tail lives past the right end)
+    ['smin', 'smax'].forEach((s, i) => $(s + '-' + m.k).addEventListener('input', e => {
+      const other = Number($((i ? 'smin' : 'smax') + '-' + m.k).value);
+      let p = Number(e.target.value);
+      if (i === 0 && p > other) p = other;
+      if (i === 1 && p < other) p = other;
+      e.target.value = p;
+      const v = (i === 0 && p <= 0) || (i === 1 && p >= SPOS) ? null : posToVal(m, p);
+      const r = state.f[m.k] || [null, null]; r[i] = v; state.f[m.k] = r;
+      $((i ? 'max' : 'min') + '-' + m.k).value = v ?? '';
+      paintFill(m); preview();          // cheap while dragging
+    }));
+    // the table is only redrawn when the handle is released (or per keyboard step)
+    ['smin', 'smax'].forEach(s => $(s + '-' + m.k).addEventListener('change', update));
+    syncSlider(m);
+  });
+}
+const SPOS = 1000;
+let numTimer;
+function posToVal(m, p) {
+  const r = ranges[m.k], v = r.lo + p / SPOS * (r.hi - r.lo);
+  return Number((Math.round(v / m.step) * m.step).toFixed(m.dec));
+}
+function valToPos(m, v, fallback) {
+  if (v == null) return fallback;
+  const r = ranges[m.k];
+  return Math.round(Math.min(SPOS, Math.max(0, (v - r.lo) / ((r.hi - r.lo) || 1) * SPOS)));
+}
+function syncSlider(m) {
+  const f = state.f[m.k] || [];
+  $('smin-' + m.k).value = valToPos(m, f[0], 0);
+  $('smax-' + m.k).value = valToPos(m, f[1], SPOS);
+  paintFill(m);
+}
+function paintFill(m) {
+  const a = Number($('smin-' + m.k).value) / SPOS * 100, b = Number($('smax-' + m.k).value) / SPOS * 100;
+  const el = $('fill-' + m.k); el.style.left = a + '%'; el.style.width = (b - a) + '%';
+}
+function binOf(v, r) { return Math.min(BINS - 1, Math.max(0, Math.floor((v - r.lo) / ((r.hi - r.lo) || 1) * BINS))); }
+function drawHists() {
+  METRICS.forEach(m => {
+    const r = ranges[m.k], all = new Array(BINS).fill(0), hit = new Array(BINS).fill(0);
+    TRACKS.forEach(t => {
+      const v = valOf(t, m); if (v == null) return;
+      const b = binOf(v, r); all[b]++;
+      if (matches(t)) hit[b]++;
+    });
+    const top = Math.max(...all) || 1;
+    $('h-' + m.k).innerHTML = all.map((n, i) => {
+      const h = n ? Math.max(1.5, n / top * 26) : 0, h2 = hit[i] ? Math.max(1.5, hit[i] / top * 26) : 0;
+      return `<rect x="${i * 10 + 1}" y="${26 - h}" width="8" height="${h}" fill="var(--gridline)"/>` +
+             `<rect x="${i * 10 + 1}" y="${26 - h2}" width="8" height="${h2}" fill="var(--green-hi)"/>`;
+    }).join('');
+  });
+}
+
+// ---- table ----
+function outline(t) {
+  const o = t.outline, p = [];
+  for (let i = 0; i < o.length; i += 2) p.push(o[i] + ',' + o[i + 1]);
+  return `<svg viewBox="-6 -6 112 112" aria-hidden="true"><polygon points="${p.join(' ')}" fill="none" stroke="var(--green)" stroke-width="7" stroke-linejoin="round"/></svg>`;
+}
+function buildHead() {
+  $('thead').innerHTML = '<th aria-label="Map"></th>' + COLS.map(c =>
+    `<th class="${c.l ? 'l' : ''}" aria-sort="${state.sort === c.k ? (state.dir > 0 ? 'ascending' : 'descending') : 'none'}">
+      <button type="button" data-k="${c.k}">${c.label}${c.unit ? ` <span class="u">${c.unit}</span>` : ''}${state.sort === c.k ? (state.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`).join('');
+  $('thead').querySelectorAll('button').forEach(b => b.onclick = () => setSort(b.dataset.k));
+  $('sortsel').innerHTML = (state.q ? `<option value="match" ${state.sort === 'match' ? 'selected' : ''}>Best match</option>` : '') +
+    COLS.map(c => `<option value="${c.k}" ${state.sort === c.k ? 'selected' : ''}>${c.label}</option>`).join('');
+  $('sortdir').textContent = state.dir > 0 ? '↑' : '↓';
+  $('sortdir').hidden = state.sort === 'match';
+}
+function setSort(k, dir) {
+  if (k === 'match') { state.sort = 'match'; buildHead(); update(); return; }
+  if (dir) state.dir = dir;
+  else if (state.sort === k) state.dir = -state.dir;
+  else state.dir = k === 'name' ? 1 : -1;          // numbers: biggest first
+  state.sort = k; buildHead(); update();
+}
+$('sortsel').onchange = e => setSort(e.target.value, state.dir);
+$('sortdir').onclick = () => setSort(state.sort, -state.dir);
+
+// while a slider is dragged: only the count and the histogram highlights follow
+function preview() {
+  const n = TRACKS.reduce((s, t) => s + (matches(t) ? 1 : 0), 0);
+  $('count').innerHTML = `${n} <span>of ${TRACKS.length} layouts</span>`;
+  drawHists();
+}
+
+// Search ranking, lower = better, summed over the typed words:
+// 0 whole word of the name or the folder, 1 a word starting with it, 2 inside name/venue/folder, 3 only in location/type
+const words = s => String(s).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+function matchRank(t) {
+  const own = [...words(t.name), ...words(t.folder), ...words(t.venue)];
+  const ownText = `${t.name} ${t.venue} ${t.folder}`.toLowerCase();
+  return state.q.toLowerCase().split(/\s+/).filter(Boolean).reduce((sum, w) => sum + (
+    t.folder.toLowerCase() === w || words(t.name).includes(w) || words(t.folder).includes(w) ? 0 :
+    own.some(x => x.startsWith(w)) ? 1 :
+    ownText.includes(w) ? 2 : 3), 0);
+}
+
+function update() {
+  save();
+  const m = METRICS.find(x => x.k === state.sort);
+  const byMatch = state.sort === 'match' && state.q;
+  const rank = new Map();
+  if (byMatch) TRACKS.forEach(t => rank.set(t, matchRank(t)));
+  const list = TRACKS.filter(t => matches(t)).sort((a, b) => {
+    if (byMatch) return rank.get(a) - rank.get(b) || a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
+    if (!m) return state.dir * a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
+    const va = valOf(a, m), vb = valOf(b, m);
+    if (va == null) return 1; if (vb == null) return -1;      // no data always last
+    return state.dir * (va - vb) || a.name.localeCompare(b.name);
+  });
+  $('count').innerHTML = `${list.length} <span>of ${TRACKS.length} layouts</span>`;
+  $('empty').hidden = list.length > 0;
+  $('rows').innerHTML = list.map(t => `<tr data-id="${t.id}">
+    <td class="map">${outline(t)}</td>
+    <td class="name l"><a href="track.html#${t.id}">${esc(t.name)}</a><small>${esc(t.folder)}${t.location ? ' · ' + esc(t.location) : ''}${noHeight(t) ? ' · <span class="flag">no height data</span>' : ''}</small></td>
+    ${METRICS.map(mm => { const v = valOf(t, mm); return v == null ? '<td class="na">–</td>' : `<td>${fmt(v, mm.dec)}</td>`; }).join('')}
+  </tr>`).join('');
+  drawHists();
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+$('rows').addEventListener('click', e => {
+  if (e.target.closest('a')) return;
+  const tr = e.target.closest('tr'); if (tr) location.href = 'track.html#' + tr.dataset.id;
+});
+$('q').value = state.q;
+// every new search shows best match first; clearing it goes back to the previous sort
+// wait until typing pauses (250 ms) before filtering; Enter applies at once
+let qTimer;
+function applySearch() {
+  clearTimeout(qTimer);
+  const was = state.q; state.q = $('q').value.trim();
+  if (was === state.q) return;
+  if (state.q && state.sort !== 'match') { if (!was) state.prevSort = state.sort; state.sort = 'match'; }   // any new search: best match first
+  if (!state.q && state.sort === 'match') state.sort = state.prevSort || 'name';
+  buildHead(); update();
+}
+$('q').addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(applySearch, 250); });
+$('q').addEventListener('keydown', e => { if (e.key === 'Enter') applySearch(); });
+$('hasheight').checked = state.hasheight;
+$('hasheight').addEventListener('change', e => { state.hasheight = e.target.checked; update(); });
+$('reset').onclick = () => {
+  if (state.sort === 'match') state.sort = state.prevSort || 'name';
+  state.q = ''; state.f = {}; state.hasheight = false;
+  $('q').value = ''; $('hasheight').checked = false; buildHead();
+  METRICS.forEach(m => { $('min-' + m.k).value = ''; $('max-' + m.k).value = ''; syncSlider(m); });
+  update();
+};
+if (matchMedia('(max-width: 820px)').matches) $('filters').open = false;
+
+fetch('data/index.json').then(r => r.json()).then(json => {
+  const data = json.layouts;
+  TRACKS = data;
+  $('crumb').textContent = `Track viewer for the Altbierbude tracks · track data pulled ${setDataDate(json.generated)}`;
+  const folders = new Set(data.map(t => t.folder)).size;
+  $('sub').innerHTML = `${data.length} layouts <span>from ${folders} track folders · click one to open it in 3D</span>`;
+  buildFilters(); buildHead(); update();
+}).catch(() => { $('count').textContent = 'Could not load the track list.'; });
+</script>
+<script src="about.js"></script>
+</body>
+</html>

@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Track · GTL Track Viewer</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="style.css">
+<style>
+/* Layout: 3D stage + height profile module on the left, column of data modules on the right; stacks on phones. */
+.wrap { flex: 1; min-height: 0; display: grid; gap: 14px;
+  grid-template-columns: minmax(0, 1fr) 280px; grid-template-rows: minmax(360px, 1fr) auto;
+  grid-template-areas: "stage side" "prof side"; padding-block: 14px; }
+.stage { grid-area: stage; position: relative; background: var(--stage); border: 1px solid var(--rule); overflow: hidden; min-height: 360px; }
+.stage canvas { display: block; width: 100%; height: 100%; position: absolute; inset: 0; touch-action: none; }
+.tools { position: absolute; left: 10px; top: 10px; right: 10px; display: flex; flex-wrap: wrap; gap: 8px; pointer-events: none; }
+.tools > * { pointer-events: auto; }
+.hint { position: absolute; left: 10px; bottom: 8px; font-size: 10px; color: var(--muted); pointer-events: none; }
+.legend { position: absolute; right: 10px; bottom: 10px; background: var(--panel); border: 1px solid var(--rule); padding: 5px 8px; font: 11px var(--mono); color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.ramp { width: 90px; height: 8px; background: linear-gradient(90deg, #2c7bb6, #abd9e9, #ffffbf, #fdae61, #d7191c); }
+.sw { display: inline-block; width: 10px; height: 10px; vertical-align: -1px; margin-right: 3px; }
+.readout { position: absolute; right: 10px; top: 46px; background: var(--panel); border: 1px solid var(--rule); border-left: 4px solid var(--green-hi); padding: 5px 8px; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+.status { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; text-align: center; padding: 20px; }
+.prof { grid-area: prof; }
+#profile { width: 100%; height: 150px; display: block; cursor: crosshair; }
+.side { grid-area: side; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.big { font-size: 34px; font-weight: bold; line-height: 1; color: var(--green); }
+.big small { font-size: 14px; color: var(--muted); margin-left: 4px; font-weight: normal; }
+.sub2 { margin-top: 4px; color: var(--muted); font-size: 11px; }
+dl { margin: 0; display: grid; grid-template-columns: 1fr auto; }
+dt, dd { padding: 6px 0; border-bottom: 1px solid var(--rule); margin: 0; }
+dt { color: var(--muted); }
+dd { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+dl > :nth-last-child(-n+2) { border-bottom: 0; }
+.warn { color: var(--warn); }
+@media (max-width: 820px) {
+  .wrap { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: "stage" "prof" "side"; }
+  .stage { height: 62vh; min-height: 320px; }
+}
+</style>
+</head>
+<body>
+<header class="mast">
+  <div class="gutter">
+    <div>
+      <div class="crumb" id="crumb">Altbierbude tracks</div>
+      <h1 id="title">Loading…</h1>
+      <div class="real" id="real"></div>
+    </div>
+    <div class="mastlinks"><a class="tag" href="./">← All tracks</a><a class="tag" href="https://github.com/TheRealNepomuk/gtl-track-viewer" data-about>About this project</a><a class="coffee" href="https://www.buymeacoffee.com/TheRealNepomuk" target="_blank" rel="noopener">☕ Buy me a coffee</a></div>
+  </div>
+</header>
+
+<main class="wrap gutter">
+  <section class="stage" id="stage" aria-label="3D track view">
+    <canvas id="c"></canvas>
+    <div class="tools">
+      <div class="seg" role="group" aria-label="Colour by">
+        <button id="col-elev" aria-pressed="true">Height</button>
+        <button id="col-sec" aria-pressed="false">Sectors</button>
+      </div>
+      <button class="btn primary" id="drive">Drive the lap</button>
+      <button class="btn" id="reset">Reset view</button>
+    </div>
+    <div class="readout" id="readout" hidden></div>
+    <div class="legend" id="legend"></div>
+    <div class="hint" id="hint">Drag to move · right-drag to rotate · scroll to zoom</div>
+    <div class="status" id="status" hidden></div>
+  </section>
+
+  <section class="module prof">
+    <h3>Height profile over one lap</h3>
+    <div class="in"><svg id="profile" role="img" aria-label="Height profile along the lap. Hover to find the spot on the track."></svg></div>
+  </section>
+
+  <aside class="side">
+    <section class="module">
+      <h3>Lap length</h3>
+      <div class="in"><div class="big" id="len"></div><div class="sub2" id="lensub"></div></div>
+    </section>
+    <section class="module">
+      <h3>Track data</h3>
+      <div class="in"><dl id="stats"></dl></div>
+    </section>
+    <section class="module">
+      <h3>About this view</h3>
+      <div class="in">
+        <p class="note" id="heightnote" hidden><b class="warn">No height data.</b> This track's AI file is completely flat, so the shape is right but heights aren't shown.</p>
+        <p class="note">Drawn from the track's AI line (.AIW): road centre, road width, pit lane and grid. Side roads the AI doesn't use don't appear. Gradients are averaged over 100 m.</p>
+        <p class="note" id="path"></p>
+      </div>
+    </section>
+  </aside>
+</main>
+
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+// Row columns (see tools/extract.py): 0-2 pos (x east, y up, z north), 3-4 sideways dir (x, z),
+// 5-8 road L/R + outer L/R, 9 branch (0 main, 1+ pit lane), 10 distance into lap, 11 sector
+const $ = id => document.getElementById(id);
+const fmt = (v, d = 0) => v.toLocaleString('en-GB', { minimumFractionDigits: d, maximumFractionDigits: d });
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+// ---------- three.js setup (once) ----------
+const stage = $('stage'), canvas = $('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 1, 60000);
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.screenSpacePanning = false;
+controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.85));
+const sun = new THREE.DirectionalLight(0xffffff, 0.55); sun.position.set(-600, 900, 400); scene.add(sun);
+const group = new THREE.Group(); scene.add(group);
+const pin = new THREE.Group(); scene.add(pin);
+const pinMat = new THREE.MeshBasicMaterial({ depthTest: false, transparent: true });
+
+// Flat tracks: a few decimetres of AIW noise would otherwise fill the whole graph and colour ramp.
+const MIN_SPAN = 10;     // metres
+let VSPAN = MIN_SPAN;
+let T = null;            // current track
+let main = [], pits = [], LAP = 1, yMin = 0, yMax = 0, cx = 0, cz = 0, R = 500, grads = [], flat = false;
+let colourMode = 'elev';
+const P = (x, y, z) => new THREE.Vector3(x - cx, y - yMin, -(z - cz));
+
+function prepare(data) {
+  T = data;
+  main = data.wp.filter(w => w[9] === 0);           // already in lap order
+  const byBranch = {};
+  data.wp.filter(w => w[9] !== 0).forEach(w => (byBranch[w[9]] = byBranch[w[9]] || []).push(w));
+  pits = Object.values(byBranch);
+  LAP = data.lap_length;
+  const ys = main.map(w => w[1]);
+  yMin = Math.min(...ys); yMax = Math.max(...ys); flat = yMax - yMin < 0.5;
+  VSPAN = Math.max(yMax - yMin, MIN_SPAN);         // graph + colour scale never shrink below MIN_SPAN
+  cx = 0; cz = 0; main.forEach(w => { cx += w[0]; cz += w[2]; }); cx /= main.length; cz /= main.length;
+  R = Math.max(...main.map(w => Math.hypot(w[0] - cx, w[2] - cz)));
+  const n = main.length;
+  grads = main.map((_, i) => {
+    let j = i, d = 0;
+    while (d < 100) { const k = (j + 1) % n; d += Math.hypot(main[k][0] - main[j][0], main[k][2] - main[j][2]); j = k; if (j === i) break; }
+    return d > 0 ? (main[j][1] - main[i][1]) / d * 100 : 0;
+  });
+}
+
+function fillText() {
+  const m = T.meta || {};
+  const name = m.trackname || m.eventname || T.id;
+  document.title = `${name} · GTL Track Viewer`;
+  $('title').textContent = name;
+  $('crumb').textContent = `Altbierbude tracks · Locations/${T.path.split('/').slice(0, -1).join('/')}`;
+  if (T.generated) setDataDate(T.generated);
+  const venue = m.venuename && m.venuename !== name ? m.venuename : '';
+  $('real').innerHTML = [venue && esc(venue), m.location && `<span>${venue ? '· ' : ''}${esc(m.location)}</span>`].filter(Boolean).join(' ');
+  $('len').innerHTML = `${fmt(LAP / 1000, 2)}<small>km</small>`;
+  $('lensub').textContent = [m.tracktype, `${T.grid.length} grid slots`].filter(Boolean).join(' · ');
+  let climb = 0; for (let i = 1; i < main.length; i++) { const dy = main[i][1] - main[i - 1][1]; if (dy > 0) climb += dy; }
+  const avgW = main.reduce((s, w) => s + Math.max(0, w[5]) + Math.max(0, w[6]), 0) / main.length;
+  const nh = '<span class="warn">no data</span>';
+  const s1 = T.sector_1, s2 = T.sector_2;
+  $('stats').innerHTML = [
+    ['Height difference', flat ? nh : `${fmt(yMax - yMin, 1)} m`],
+    ['Total climb per lap', flat ? nh : `${fmt(climb)} m`],
+    ['Steepest climb', flat ? nh : `${fmt(Math.max(...grads), 1)} %`],
+    ['Steepest descent', flat ? nh : `${fmt(-Math.min(...grads), 1)} %`],
+    ['Road width (average)', `${fmt(avgW, 1)} m`],
+    ['Pit lane', pits.length ? 'yes' : 'none'],
+    ...(s1 > 0 && s2 > s1 && s2 < LAP ? [['Sector 1 · 2 · 3', `${fmt(s1 / 1000, 2)} · ${fmt((s2 - s1) / 1000, 2)} · ${fmt((LAP - s2) / 1000, 2)} km`]] : []),
+  ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  $('heightnote').hidden = !flat;
+  $('path').innerHTML = `File: <span class="num">${esc(T.path)}</span>`;
+}
+
+function elevColour(y) {
+  if (flat) { const c = new THREE.Color(css('--green-hi')); return [c.r, c.g, c.b]; }
+  const stops = [[0x2c,0x7b,0xb6],[0xab,0xd9,0xe9],[0xff,0xff,0xbf],[0xfd,0xae,0x61],[0xd7,0x19,0x1c]];
+  let t = (y - yMin) / VSPAN * (stops.length - 1);
+  const i = Math.min(stops.length - 2, Math.floor(t)); t -= i;
+  return stops[i].map((c, k) => (c + (stops[i + 1][k] - c) * t) / 255);
+}
+function secColour(s) { const c = new THREE.Color(css(['--s1', '--s2', '--s3'][Math.max(0, Math.min(2, s))])); return [c.r, c.g, c.b]; }
+
+function ribbon(pts, closed, wL, wR, lift, colourFn) {
+  const pos = [], col = [], idx = [], n = pts.length;
+  pts.forEach(w => {
+    const px = w[3], pz = w[4], L = wL(w), Rr = wR(w);
+    const a = P(w[0] - px * L, w[1], w[2] - pz * L); a.y += lift;
+    const b = P(w[0] + px * Rr, w[1], w[2] + pz * Rr); b.y += lift;
+    pos.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    const c = colourFn(w); col.push(...c, ...c);
+  });
+  const segs = closed ? n : n - 1;
+  for (let i = 0; i < segs; i++) { const a = i * 2, b = ((i + 1) % n) * 2; idx.push(a, b, a + 1, a + 1, b, b + 1); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
+const W = v => Math.max(0, v);
+
+function build() {
+  group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+  group.clear();
+  const gl = new THREE.Color(css('--gridline'));
+  const roadCol = colourMode === 'elev' ? w => elevColour(w[1]) : w => secColour(w[11]);
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  group.add(new THREE.Mesh(ribbon(main, true, w => Math.max(W(w[7]), W(w[5])) + 1.5, w => Math.max(W(w[8]), W(w[6])) + 1.5, -0.25, () => [gl.r, gl.g, gl.b]), mat));
+  group.add(new THREE.Mesh(ribbon(main, true, w => W(w[5]), w => W(w[6]), 0.05, roadCol), mat));
+  const pc = new THREE.Color(css('--muted'));
+  pits.forEach(p => { if (p.length > 1) group.add(new THREE.Mesh(ribbon(p, false, w => Math.max(2, W(w[5])), w => Math.max(2, W(w[6])), 0.02, () => [pc.r, pc.g, pc.b]), mat)); });
+  // start/finish line + pole
+  const s = main[0], L = W(s[5]) + 1, Rr = W(s[6]) + 1;
+  const a = P(s[0] - s[3] * L, s[1], s[2] - s[4] * L), b = P(s[0] + s[3] * Rr, s[1], s[2] + s[4] * Rr);
+  a.y += 0.4; b.y += 0.4;
+  group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color: css('--fg') })));
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 14), new THREE.MeshBasicMaterial({ color: css('--fg') }));
+  pole.position.copy(a).add(new THREE.Vector3(0, 7, 0)); group.add(pole);
+  const gm = new THREE.MeshBasicMaterial({ color: css('--fg') });
+  T.grid.forEach(g => { const m = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.6, 1.8), gm); m.position.copy(P(g[0], g[1], g[2])); m.position.y += 0.4; group.add(m); });
+  if (!flat) {
+    const dl = [], every = Math.max(1, Math.round(main.length / 200));
+    for (let i = 0; i < main.length; i += every) { const p = P(main[i][0], main[i][1], main[i][2]); dl.push(p.x, 0, p.z, p.x, p.y, p.z); }
+    const dg = new THREE.BufferGeometry(); dg.setAttribute('position', new THREE.Float32BufferAttribute(dl, 3));
+    group.add(new THREE.LineSegments(dg, new THREE.LineBasicMaterial({ color: css('--gridline') })));
+  }
+  const cell = R > 4000 ? 1000 : 100;
+  const span = Math.ceil(R / cell) * cell * 2 + cell * 2;
+  const gh = new THREE.GridHelper(span, span / cell, css('--gridline'), css('--gridline'));
+  gh.position.y = -0.5; group.add(gh);
+  // hover pin, sized to the track
+  pin.children.forEach(o => o.geometry.dispose()); pin.clear();
+  const H = Math.max(25, R * 0.07);
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(H * 0.025, H * 0.025, H, 8), pinMat); stem.position.y = H / 2;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(H * 0.12, 20, 14), pinMat); head.position.y = H;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(H * 0.14, H * 0.22, 32), pinMat); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.3;
+  [stem, head, ring].forEach(m => { m.renderOrder = 10; pin.add(m); });
+  pin.visible = false;
+  pinMat.color.set(css('--pin'));
+  scene.background = new THREE.Color(css('--stage'));
+  renderLegend();
+}
+
+function renderLegend() {
+  const lg = $('legend');
+  if (colourMode === 'sec') lg.innerHTML = ['S1', 'S2', 'S3'].map((s, i) => `<span><i class="sw" style="background:var(--s${i + 1})"></i>${s}</span>`).join('');
+  else if (flat) lg.textContent = 'no height data';
+  else lg.innerHTML = `0 m <span class="ramp"></span> +${fmt(VSPAN)} m`;
+}
+function home() {
+  camera.position.set(R * 0.25, R * 1.1, R * 1.25);
+  camera.far = R * 20; camera.updateProjectionMatrix();
+  controls.target.set(0, (yMax - yMin) * 0.3, 0);
+  controls.update();
+}
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+function press(ids, on) { ids.forEach(id => $(id).setAttribute('aria-pressed', id === on)); }
+$('col-elev').onclick = () => { colourMode = 'elev'; press(['col-elev', 'col-sec'], 'col-elev'); if (T) build(); };
+$('col-sec').onclick = () => { colourMode = 'sec'; press(['col-elev', 'col-sec'], 'col-sec'); if (T) build(); };
+$('reset').onclick = () => { stopDrive(); if (T) home(); };
+
+// ---------- drive the lap (+ scrub on the graph) ----------
+let driving = false, scrubbing = false, driveD = 0, lastT = 0;
+const driveBtn = $('drive'), hint = $('hint'), svg = $('profile');
+const HINT_FREE = hint.textContent, HINT_DRIVE = 'Drag along the height profile to scrub through the lap';
+function stopDrive() { if (!driving) return; driving = false; scrubbing = false; driveBtn.textContent = 'Drive the lap'; controls.enabled = true; setReadout(null); drawCursor(null); hint.textContent = HINT_FREE; svg.style.touchAction = ''; }
+driveBtn.onclick = () => {
+  if (!T) return;
+  if (driving) { stopDrive(); home(); return; }
+  driving = true; driveD = 0; lastT = performance.now(); controls.enabled = false; pin.visible = false; driveBtn.textContent = 'Stop';
+  hint.textContent = HINT_DRIVE; svg.style.touchAction = 'none';
+};
+function idxAtDist(d) {
+  let lo = 0, hi = main.length - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (main[m][10] <= d) lo = m; else hi = m - 1; }
+  return lo;
+}
+function pointAtDist(d) {
+  d = ((d % LAP) + LAP) % LAP;
+  const i = idxAtDist(d), j = (i + 1) % main.length;
+  const d0 = main[i][10], d1 = j === 0 ? LAP : main[j][10];
+  const t = d1 > d0 ? Math.min(1, (d - d0) / (d1 - d0)) : 0;
+  return P(main[i][0] + (main[j][0] - main[i][0]) * t, main[i][1] + (main[j][1] - main[i][1]) * t, main[i][2] + (main[j][2] - main[i][2]) * t);
+}
+const SPEED = 45; // m/s, about 160 km/h
+function tick(now) {
+  if (driving) {
+    const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
+    if (!scrubbing) driveD = (driveD + dt * SPEED) % LAP;
+    const p = pointAtDist(driveD), look = pointAtDist(driveD + 35);
+    camera.position.set(p.x, p.y + 6, p.z);
+    camera.lookAt(look.x, look.y + 1.5, look.z);
+    drawCursor(driveD); setReadout(driveD);
+  } else controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+
+// ---------- height profile ----------
+let PW = 0; const PH = 150, padL = 44, padR = 8, padT = 8, padB = 22;
+const px = d => padL + d / LAP * (PW - padL - padR);
+const py = y => flat ? padT + (PH - padT - padB) / 2 : padT + (1 - (y - yMin) / VSPAN) * (PH - padT - padB);
+function niceStep(range, target) { const raw = range / target, p = 10 ** Math.floor(Math.log10(raw)); return [1, 2, 5, 10].map(m => m * p).find(s => s >= raw) || raw; }
+function drawProfile() {
+  if (!T) return;
+  PW = svg.clientWidth || 600;
+  svg.setAttribute('viewBox', `0 0 ${PW} ${PH}`);
+  const rel = VSPAN;
+  let st = 1; const ticksY = []; if (!flat) { st = niceStep(rel, 4); for (let v = 0; v <= rel + 1e-6; v += st) ticksY.push(v); }
+  const ticksX = []; const xs = niceStep(LAP, 6); for (let d = 0; d <= LAP; d += xs) ticksX.push(d);
+  let path = main.map((w, i) => `${i ? 'L' : 'M'}${px(w[10]).toFixed(1)},${py(w[1]).toFixed(1)}`).join('');
+  path += `L${px(LAP).toFixed(1)},${py(main[0][1]).toFixed(1)}`;
+  const area = path + `L${px(LAP)},${PH - padB}L${padL},${PH - padB}Z`;
+  const Tx = (x, y, s, a = 'middle') => `<text x="${x}" y="${y}" text-anchor="${a}" font-size="10" font-family="IBM Plex Mono, monospace" fill="var(--muted)">${s}</text>`;
+  const secs = [T.sector_1, T.sector_2].filter(d => d > 0 && d < LAP);
+  svg.innerHTML = `
+    <defs><linearGradient id="pf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="var(--green-hi)" stop-opacity=".32"/><stop offset="1" stop-color="var(--green-hi)" stop-opacity="0"/></linearGradient></defs>
+    ${ticksY.map(v => `<line x1="${padL}" x2="${PW - padR}" y1="${py(yMin + v)}" y2="${py(yMin + v)}" stroke="var(--rule)" stroke-width="1"/>${Tx(padL - 6, py(yMin + v) + 4, `+${fmt(v, st < 1 ? 1 : 0)} m`, 'end')}`).join('')}
+    ${flat ? Tx((padL + PW) / 2, padT + 14, 'no height data in this track’s AI file') : ''}
+    ${ticksX.map(d => Tx(px(d), PH - 6, `${fmt(d / 1000, xs < 1000 ? 1 : 0)} km`)).join('')}
+    ${secs.map((d, i) => `<line x1="${px(d)}" x2="${px(d)}" y1="${padT}" y2="${PH - padB}" stroke="var(--muted)" stroke-dasharray="3 3"/>${Tx(px(d) + 4, padT + 10, `S${i + 2}`, 'start')}`).join('')}
+    <path d="${area}" fill="url(#pf)"/>
+    <path d="${path}" fill="none" stroke="var(--green-hi)" stroke-width="1.8" stroke-linejoin="round"/>
+    <g id="cursor" visibility="hidden"><line id="cl" y1="${padT}" y2="${PH - padB}" stroke="var(--fg)"/><circle id="cc" r="4" fill="var(--fg)"/></g>`;
+}
+function drawCursor(d) {
+  const g = svg.querySelector('#cursor'); if (!g) return;
+  if (d == null) { g.setAttribute('visibility', 'hidden'); return; }
+  const i = idxAtDist(d), x = px(d);
+  g.setAttribute('visibility', 'visible');
+  svg.querySelector('#cl').setAttribute('x1', x); svg.querySelector('#cl').setAttribute('x2', x);
+  svg.querySelector('#cc').setAttribute('cx', x); svg.querySelector('#cc').setAttribute('cy', py(main[i][1]));
+}
+const ro = $('readout');
+function setReadout(d) {
+  if (d == null) { ro.hidden = true; return; }
+  const i = idxAtDist(d), g = grads[i];
+  ro.hidden = false;
+  ro.textContent = flat ? `${fmt(d)} m` : `${fmt(d)} m · +${fmt(main[i][1] - yMin, 1)} m · ${g >= 0 ? '+' : ''}${fmt(g, 1)} %`;
+}
+function distFromEvent(e) {
+  const r = svg.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width * PW;
+  return Math.max(0, Math.min(LAP - 0.01, (x - padL) / (PW - padL - padR) * LAP));
+}
+svg.addEventListener('pointerdown', e => {
+  if (!driving) return;
+  scrubbing = true; svg.setPointerCapture(e.pointerId); driveD = distFromEvent(e); e.preventDefault();
+});
+const endScrub = () => { if (scrubbing) { scrubbing = false; lastT = performance.now(); } };
+svg.addEventListener('pointerup', endScrub);
+svg.addEventListener('pointercancel', endScrub);
+svg.addEventListener('pointermove', e => {
+  if (!T) return;
+  if (driving) { if (scrubbing) driveD = distFromEvent(e); return; }
+  const d = distFromEvent(e);
+  drawCursor(d); setReadout(d);
+  pin.position.copy(pointAtDist(d)); pin.visible = true;
+});
+svg.addEventListener('pointerleave', () => { if (!driving) { pin.visible = false; setReadout(null); drawCursor(null); } });
+new ResizeObserver(drawProfile).observe(svg);
+
+const rebuildTheme = () => { if (T) { build(); drawProfile(); } };
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', rebuildTheme);
+new MutationObserver(rebuildTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+// ---------- load the track named in the URL (#id) ----------
+function showStatus(msg) { $('status').hidden = !msg; $('status').innerHTML = msg || ''; }
+function load() {
+  const id = decodeURIComponent(location.hash.slice(1));
+  stopDrive();
+  if (!/^[a-z0-9-]+$/.test(id)) { $('title').textContent = 'No track chosen'; showStatus('Pick a track from the <a href="./">track list</a>.'); return; }
+  showStatus('Loading track…');
+  fetch(`data/tracks/${id}.json`).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(data => {
+    prepare(data); fillText(); build(); resize(); home(); drawProfile(); showStatus('');
+  }).catch(() => { $('title').textContent = 'Track not found'; showStatus(`There's no track with the ID “${esc(id)}”. Pick one from the <a href="./">track list</a>.`); });
+}
+window.addEventListener('hashchange', load);
+load();
+requestAnimationFrame(tick);
+</script>
+<script src="about.js"></script>
+</body>
+</html>

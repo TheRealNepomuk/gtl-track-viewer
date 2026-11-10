@@ -8,16 +8,19 @@ Only this derived line data is written; no meshes, textures or other mod files.
 Usage:
   python3 -I tools/extract.py <GameData/Locations> <output dir>
 
-Writes <out>/tracks/<id>.json per layout and <out>/index.json, and prints a
+Writes <out>/tracks/<id>.json per layout and <out>/index.json ({"generated", "layouts"}), and prints a
 summary of layouts that could not be converted.
 """
+import datetime
 import json
+import math
 import os
 import re
 import sys
 
 # some AIWs write ".9678" / "-.5" without the leading zero
 NUM = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
+TODAY = datetime.date.today().isoformat()   # shown on the site as "data as of"
 GDB_KEYS = {"trackname", "eventname", "venuename", "location", "length", "tracktype"}
 
 
@@ -99,26 +102,78 @@ def convert(aiw_path):
             r1(sc[1]), int(sc[0]),                   # 10 distance into lap, 11 sector
         ])
     main = [r for r in rows if r[9] == 0]
+    pits = [r for r in rows if r[9] != 0]
     if len(main) < 20:
         raise ValueError(f"only {len(main)} main-loop waypoints")
     lap = num(head.get("lap_length"))
     if lap <= 0:
         raise ValueError("no lap_length")
-    ys = [r[1] for r in main]
+
+    # Order the main loop: normally by "distance into lap", but a few AIWs have
+    # broken distances. Use whichever order has the smaller biggest step, and
+    # rebuild the distances from the geometry if we fall back to file order.
+    def max_step(seq):
+        return max(math.dist((seq[i][0], seq[i][2]), (seq[i - 1][0], seq[i - 1][2])) for i in range(1, len(seq)))
+    by_dist = sorted(main, key=lambda r: r[10])
+    if max_step(by_dist) > max_step(main) * 1.5:
+        cum = [0.0]
+        for i in range(1, len(main)):
+            cum.append(cum[-1] + math.dist(main[i][:3], main[i - 1][:3]))
+        loop = cum[-1] + math.dist(main[0][:3], main[-1][:3])
+        for r, c in zip(main, cum):
+            r[10] = r1(c / loop * lap)
+    else:
+        main = by_dist
+
     data = {
         "lap_length": round(lap, 1),
         "sector_1": round(num(head.get("sector_1_length")), 1),
         "sector_2": round(num(head.get("sector_2_length")), 1),
         "grid": [[r1(c) for c in g[:3]] for g in grid if len(g) >= 3],
-        "wp": rows,
+        "wp": main + pits,      # main loop first, in lap order, then pit lane(s)
     }
-    stats = {
+    return data, track_stats(main, pits, data)
+
+
+def track_stats(main, pits, data):
+    n = len(main)
+    ys = [r[1] for r in main]
+
+    def grad(i):            # gradient over the next ~100 m, in % (shorter windows pick up AIW bumps)
+        j, d = i, 0.0
+        while d < 100:
+            k = (j + 1) % n
+            d += math.dist((main[k][0], main[k][2]), (main[j][0], main[j][2]))
+            j = k
+            if j == i:
+                break
+        return (main[j][1] - main[i][1]) / d * 100 if d > 0 else 0.0
+    grads = [grad(i) for i in range(n)]
+    climb = sum(max(0.0, main[i][1] - main[i - 1][1]) for i in range(1, n))
+    widths = [max(0.0, r[5]) + max(0.0, r[6]) for r in main]
+
+    # small outline for list thumbnails: ~64 points, scaled to 0..100, north up
+    step = max(1, n // 64)
+    pts = main[::step]
+    xs, zs = [p[0] for p in pts], [p[2] for p in pts]
+    span = max(max(xs) - min(xs), max(zs) - min(zs)) or 1
+    ox = (100 - (max(xs) - min(xs)) / span * 100) / 2
+    oz = (100 - (max(zs) - min(zs)) / span * 100) / 2
+    outline = []
+    for p in pts:
+        outline += [round(ox + (p[0] - min(xs)) / span * 100), round(oz + (max(zs) - p[2]) / span * 100)]
+
+    return {
         "elev": round(max(ys) - min(ys), 1),
+        "climb": round(climb),
+        "up": round(max(grads), 1),
+        "down": round(-min(grads), 1),
+        "width": round(sum(widths) / n, 1),
         "grid": len(data["grid"]),
-        "pit": any(r[9] > 0 for r in rows),
-        "wps": len(main),
+        "pit": bool(pits),
+        "wps": n,
+        "outline": outline,
     }
-    return data, stats
 
 
 def slug(rel):
@@ -157,6 +212,7 @@ def main():
         data["id"] = tid
         data["meta"] = meta
         data["path"] = rel.replace(os.sep, "/")
+        data["generated"] = TODAY
         with open(os.path.join(out, "tracks", tid + ".json"), "w") as f:
             json.dump(data, f, separators=(",", ":"))
         index.append({
@@ -170,7 +226,7 @@ def main():
             **stats,
         })
     with open(os.path.join(out, "index.json"), "w") as f:
-        json.dump(index, f, separators=(",", ":"), ensure_ascii=False)
+        json.dump({"generated": TODAY, "layouts": index}, f, separators=(",", ":"), ensure_ascii=False)
 
     orphans = []
     for root, _, files in os.walk(src):
